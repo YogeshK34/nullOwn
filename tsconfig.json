@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "types": ["node", "mocha", "chai"]
+  },
+  "include": ["./scripts/**/*.ts", "./test/**/*.ts", "./hardhat.config.ts"],
+  "exclude": ["node_modules", "frontend", "dist", "artifacts", "cache"]
+}

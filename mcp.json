@@ -1,0 +1,91 @@
+{
+  "_comments": {
+    "purpose": "Universal MCP template for all new Claude Code projects.",
+    "installation": [
+      "1. Save this file as .mcp.json in the project root.",
+      "2. Ask Claude: 'Install all MCP servers defined in this .mcp.json'.",
+      "3. Claude should verify each installation before starting development.",
+      "4. Replace <PROJECT_ROOT> with the absolute path of the current project if required.",
+      "5. Alternatively, install globally using: claude mcp add <name> -s user -- ...",
+      "6. Serena requires a one-time local install first: uv tool install -p 3.13 serena-agent (then 'serena' is on PATH); prefer 'serena setup claude-code' to auto-register it at user scope instead of via this file."
+    ],
+    "official_sources": {
+      "Context7": "https://github.com/upstash/context7",
+      "Playwright MCP": "https://github.com/microsoft/playwright-mcp",
+      "Filesystem MCP": "https://github.com/modelcontextprotocol/servers",
+      "Fetch MCP": "https://github.com/modelcontextprotocol/servers",
+      "Sequential Thinking": "https://github.com/modelcontextprotocol/servers",
+      "Chrome DevTools MCP": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "Serena": "https://github.com/oraios/serena"
+    }
+  },
+
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "<PROJECT_ROOT>"
+      ]
+    },
+
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ]
+    },
+
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp"
+      ]
+    },
+
+    "serena": {
+      "command": "serena",
+      "args": [
+        "start-mcp-server",
+        "--context",
+        "claude-code",
+        "--project",
+        "<PROJECT_ROOT>"
+      ]
+    },
+
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
+    }
+  }
+}

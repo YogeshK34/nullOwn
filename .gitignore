@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# hardhat
+artifacts/
+cache/
+typechain-types/
+dist/
+
+# circuit build artifacts
+# .wasm and verification_key.json ARE committed (needed by the browser prover).
+# Proving keys and Powers of Tau files are far too large for git — see
+# scripts/setup-zkeys.ts for regeneration steps.
+circuits/build/*.zkey
+circuits/build/*.ptau
+circuits/build/*.r1cs
+circuits/build/*.sym
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# tooling caches
+.serena/
