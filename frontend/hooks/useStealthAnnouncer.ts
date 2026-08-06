@@ -6,7 +6,9 @@ import type { Address } from "viem";
 
 import { abis } from "@/lib/contracts";
 import { chainId, contractAddresses } from "@/lib/env";
+import { demoMode } from "@/lib/demo";
 import { SCHEME_ID, type StealthPayment } from "@/lib/stealth";
+import { useDemoTx } from "./useDemoTx";
 
 /**
  * Publishes an ERC-5564 announcement so the recipient can discover a payment.
@@ -43,9 +45,18 @@ export function useStealthAnnouncer(): UseStealthAnnouncerResult {
     chainId,
   });
 
+  const demoTx = useDemoTx();
+
   const announce = useCallback(
     (payment: StealthPayment): void => {
       if (!announcerAddress) return;
+
+      // Nothing to record: an announcement is a log entry, and the demo
+      // scanner synthesises its own. Only the transaction states matter here.
+      if (demoMode) {
+        demoTx.run(`announce/${payment.stealthAddress}`);
+        return;
+      }
 
       writeContract({
         address: announcerAddress,
@@ -61,17 +72,17 @@ export function useStealthAnnouncer(): UseStealthAnnouncerResult {
         chainId,
       });
     },
-    [announcerAddress, writeContract],
+    [announcerAddress, demoTx, writeContract],
   );
 
   return {
     announce,
-    isAnnouncing,
-    isConfirming,
-    isConfirmed,
-    txHash,
-    error,
-    reset,
+    isAnnouncing: demoMode ? demoTx.isWriting : isAnnouncing,
+    isConfirming: demoMode ? demoTx.isConfirming : isConfirming,
+    isConfirmed: demoMode ? demoTx.isConfirmed : isConfirmed,
+    txHash: demoMode ? demoTx.txHash : txHash,
+    error: demoMode ? demoTx.error : error,
+    reset: demoMode ? demoTx.reset : reset,
     isConfigured: announcerAddress !== undefined,
   };
 }

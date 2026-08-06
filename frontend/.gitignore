@@ -18,6 +18,9 @@ yarn-error.log*
 
 # env files
 .env*
+# ...except the demo template, which holds no secrets and is what makes
+# `npm run demo` work on a fresh clone.
+!.env.demo
 
 # vercel
 .vercel

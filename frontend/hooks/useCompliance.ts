@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   useAccount,
   useReadContract,
@@ -18,6 +18,16 @@ import type { Address } from "viem";
 
 import { abis, readOnlyContract } from "@/lib/contracts";
 import { chainId, contractAddresses } from "@/lib/env";
+import { DEMO_ADMIN, demoMode } from "@/lib/demo";
+import {
+  addDemoAudit,
+  fulfillDemoAudit,
+  getDemoAudits,
+  isDemoRegulator,
+  setDemoRegulator,
+  subscribeDemoStore,
+} from "@/lib/demo-store";
+import { useDemoTx } from "./useDemoTx";
 
 /**
  * Compliance module bindings: role checks, audit requests, and the audit log.
@@ -84,7 +94,7 @@ export function useCompliance(): UseComplianceResult {
     abi: abis.complianceModule,
     functionName: "auditCount",
     chainId,
-    query: { enabled: isConfigured },
+    query: { enabled: !demoMode && isConfigured },
   });
 
   const { data: isRegulator, isLoading: isRegulatorLoading } = useReadContract({
@@ -93,7 +103,7 @@ export function useCompliance(): UseComplianceResult {
     functionName: "isRegulator",
     args: address ? [address] : undefined,
     chainId,
-    query: { enabled: isConfigured && address !== undefined },
+    query: { enabled: !demoMode && isConfigured && address !== undefined },
   });
 
   const { data: isAdmin, isLoading: isAdminLoading } = useReadContract({
@@ -102,10 +112,18 @@ export function useCompliance(): UseComplianceResult {
     functionName: "hasRole",
     args: address ? [DEFAULT_ADMIN_ROLE, address] : undefined,
     chainId,
-    query: { enabled: isConfigured && address !== undefined },
+    query: { enabled: !demoMode && isConfigured && address !== undefined },
   });
 
-  const auditCount = auditCountRaw !== undefined ? Number(auditCountRaw) : 0;
+  // The demo log lives in the shared store so a request opened here shows up in
+  // the log panel below without a round trip.
+  const demoAudits = useSyncExternalStore(subscribeDemoStore, getDemoAudits, getDemoAudits);
+
+  const auditCount = demoMode
+    ? demoAudits.length
+    : auditCountRaw !== undefined
+      ? Number(auditCountRaw)
+      : 0;
 
   /**
    * Load every audit record.
@@ -117,6 +135,16 @@ export function useCompliance(): UseComplianceResult {
    */
   const refresh = useCallback(async (): Promise<void> => {
     if (!isConfigured) return;
+
+    // In demo mode the store is the source of truth and is already subscribed
+    // to; "Refresh" only needs to look like it did something.
+    if (demoMode) {
+      setIsLoading(true);
+      setError(undefined);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     setError(undefined);
@@ -172,9 +200,21 @@ export function useCompliance(): UseComplianceResult {
     if (isConfirmed) void refresh();
   }, [isConfirmed, refresh]);
 
+  const demoTx = useDemoTx();
+
   const requestAudit = useCallback(
     (scopeLabel: string): void => {
       if (!complianceAddress) return;
+
+      if (demoMode) {
+        // Validate before the simulated send, so a bad scope fails the way the
+        // real path does — synchronously, for the panel to catch.
+        encodeScope(scopeLabel);
+        const regulator = address ?? DEMO_ADMIN;
+        demoTx.run(`request-audit/${scopeLabel}`, () => addDemoAudit(regulator, scopeLabel));
+        return;
+      }
+
       writeContract({
         address: complianceAddress,
         abi: abis.complianceModule,
@@ -183,12 +223,18 @@ export function useCompliance(): UseComplianceResult {
         chainId,
       });
     },
-    [complianceAddress, writeContract],
+    [address, complianceAddress, demoTx, writeContract],
   );
 
   const fulfillAudit = useCallback(
     (auditId: number, encryptedData: string): void => {
       if (!complianceAddress) return;
+
+      if (demoMode) {
+        demoTx.run(`fulfill-audit/${auditId}`, () => fulfillDemoAudit(auditId, encryptedData));
+        return;
+      }
+
       writeContract({
         address: complianceAddress,
         abi: abis.complianceModule,
@@ -197,12 +243,20 @@ export function useCompliance(): UseComplianceResult {
         chainId,
       });
     },
-    [complianceAddress, writeContract],
+    [complianceAddress, demoTx, writeContract],
   );
 
   const setRegulatorRole = useCallback(
     (account: Address, grant: boolean): void => {
       if (!complianceAddress) return;
+
+      if (demoMode) {
+        demoTx.run(`${grant ? "grant" : "revoke"}-regulator/${account}`, () =>
+          setDemoRegulator(account, grant),
+        );
+        return;
+      }
+
       writeContract({
         address: complianceAddress,
         abi: abis.complianceModule,
@@ -211,18 +265,24 @@ export function useCompliance(): UseComplianceResult {
         chainId,
       });
     },
-    [complianceAddress, writeContract],
+    [complianceAddress, demoTx, writeContract],
   );
 
+  // Newest first — an audit log is read from the top. The store keeps the
+  // fixtures in chain order, so the display order is applied here.
+  const demoAuditsNewestFirst = [...demoAudits].reverse();
+
   return {
-    audits,
+    audits: demoMode ? demoAuditsNewestFirst : audits,
     auditCount,
     isLoading,
     error,
     refresh,
-    isRegulator: Boolean(isRegulator),
-    isAdmin: Boolean(isAdmin),
-    isRoleLoading: isRegulatorLoading || isAdminLoading,
+    isRegulator: demoMode ? isDemoRegulator(address) : Boolean(isRegulator),
+    isAdmin: demoMode
+      ? address?.toLowerCase() === DEMO_ADMIN.toLowerCase()
+      : Boolean(isAdmin),
+    isRoleLoading: demoMode ? false : isRegulatorLoading || isAdminLoading,
     requestAudit,
     fulfillAudit,
     grantRegulator: useCallback(
@@ -233,12 +293,12 @@ export function useCompliance(): UseComplianceResult {
       (account: Address) => setRegulatorRole(account, false),
       [setRegulatorRole],
     ),
-    isWriting,
-    isConfirming,
-    isConfirmed,
-    txHash,
-    writeError,
-    resetWrite,
+    isWriting: demoMode ? demoTx.isWriting : isWriting,
+    isConfirming: demoMode ? demoTx.isConfirming : isConfirming,
+    isConfirmed: demoMode ? demoTx.isConfirmed : isConfirmed,
+    txHash: demoMode ? demoTx.txHash : txHash,
+    writeError: demoMode ? demoTx.error : writeError,
+    resetWrite: demoMode ? demoTx.reset : resetWrite,
     isConfigured,
   };
 }

@@ -6,8 +6,20 @@ import type { Address } from "viem";
 import { readOnlyContract, readOnlyProvider } from "@/lib/contracts";
 import { announcementStartBlock, contractAddresses } from "@/lib/env";
 import {
+  DEMO_ANNOUNCEMENT_BLOCKS,
+  DEMO_ANNOUNCEMENTS_PER_CHUNK,
+  DEMO_ANNOUNCERS,
+  DEMO_LATEST_BLOCK,
+  DEMO_SCAN_CHUNKS,
+  demoDelay,
+  demoMode,
+  demoTxHash,
+} from "@/lib/demo";
+import {
   checkAnnouncement,
+  computeStealthAddress,
   deriveStealthPrivateKey,
+  metaAddressFromKeys,
   viewTagFromMetadata,
   type StealthKeys,
 } from "@/lib/stealth";
@@ -114,6 +126,12 @@ export function useAnnouncementScanner(): UseAnnouncementScannerResult {
       setError(undefined);
       setDiscovered([]);
 
+      if (demoMode) {
+        await demoScan(keys, cancelledRef, setDiscovered, setProgress, setLastScannedBlock);
+        setIsScanning(false);
+        return;
+      }
+
       try {
         const provider = readOnlyProvider();
         const contract = readOnlyContract("stealthAnnouncer");
@@ -204,6 +222,72 @@ export function useAnnouncementScanner(): UseAnnouncementScannerResult {
     revealPrivateKey,
     isConfigured,
   };
+}
+
+/**
+ * The demo scan.
+ *
+ * Walks a fabricated block range on a timer so the progress bar, the running
+ * "announcements examined" count and the cancel button all behave as they do
+ * against a real chain.
+ *
+ * The payments it finds are not fabricated. Each one is produced by the real
+ * `computeStealthAddress` against the user's own meta-address, so the ephemeral
+ * key genuinely belongs to the stealth address beside it — "Reveal Controlling
+ * Key" re-derives a working private key and the panel's own check on that key
+ * passes for the same reason it would on Sepolia.
+ */
+async function demoScan(
+  keys: StealthKeys,
+  cancelled: { current: boolean },
+  setDiscovered: (assets: DiscoveredAsset[]) => void,
+  setProgress: (progress: ScanProgress) => void,
+  setLastScannedBlock: (block: bigint) => void,
+): Promise<void> {
+  const fromBlock = announcementStartBlock;
+  const toBlock = BigInt(DEMO_LATEST_BLOCK);
+  const span = toBlock - fromBlock + 1n;
+
+  const encoded = metaAddressFromKeys(keys).encoded;
+  const payments = DEMO_ANNOUNCEMENT_BLOCKS.map(() => computeStealthAddress(encoded));
+
+  const matches: DiscoveredAsset[] = [];
+  let announcementsSeen = 0;
+
+  for (let chunk = 1; chunk <= DEMO_SCAN_CHUNKS; chunk++) {
+    if (cancelled.current) return;
+    await demoDelay(260);
+    if (cancelled.current) return;
+
+    announcementsSeen += DEMO_ANNOUNCEMENTS_PER_CHUNK;
+    const currentBlock = fromBlock + (span * BigInt(chunk)) / BigInt(DEMO_SCAN_CHUNKS) - 1n;
+
+    // A payment surfaces once the walk passes the block it was announced in.
+    DEMO_ANNOUNCEMENT_BLOCKS.forEach((blockNumber, index) => {
+      if (BigInt(blockNumber) > currentBlock) return;
+      if (matches.some((match) => match.blockNumber === blockNumber)) return;
+
+      const payment = payments[index]!;
+      matches.push({
+        stealthAddress: payment.stealthAddress,
+        ephemeralPublicKey: payment.ephemeralPublicKey,
+        viewTag: payment.viewTag,
+        blockNumber,
+        txHash: demoTxHash(`announcement/${blockNumber}`),
+        announcedBy: DEMO_ANNOUNCERS[index % DEMO_ANNOUNCERS.length]!,
+      });
+    });
+
+    setDiscovered([...matches]);
+    setProgress({
+      fromBlock,
+      toBlock,
+      currentBlock,
+      percent: Number(((currentBlock - fromBlock + 1n) * 100n) / span),
+      announcementsSeen,
+    });
+    setLastScannedBlock(currentBlock);
+  }
 }
 
 /** Query one block range, normalising ethers' log shape. */

@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { WagmiProvider, type State } from "wagmi";
 
+import { DemoAutoConnect } from "@/components/app/demo-auto-connect";
+import { demoMode } from "@/lib/demo";
 import { getConfig } from "@/lib/wagmi";
 
 import "@rainbow-me/rainbowkit/styles.css";
@@ -53,6 +55,7 @@ export function Providers({ children, initialState }: ProvidersProps) {
           })}
           modalSize="compact"
         >
+          {demoMode && <DemoAutoConnect />}
           {children}
         </RainbowKitProvider>
       </QueryClientProvider>

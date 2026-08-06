@@ -18,6 +18,7 @@ import { HoldingsEditor, type HoldingRow } from "@/components/prove/holdings-edi
 import { useStealthKeys } from "@/hooks/useStealthKeys";
 import { useOwnershipProof, type ProofStage } from "@/hooks/useOwnershipProof";
 import type { TokenHolding } from "@/lib/merkle";
+import { DEMO_HOLDINGS, DEMO_THRESHOLD, demoMode } from "@/lib/demo";
 import { chainId } from "@/lib/env";
 import { explorerTxUrl } from "@/lib/chains";
 import { fieldToHex32 } from "@/lib/poseidon";
@@ -34,11 +35,21 @@ export default function ProvePage() {
   const { keys, status } = useStealthKeys();
   const proof = useOwnershipProof();
 
-  const [rows, setRows] = useState<HoldingRow[]>([
-    { id: "initial-holding", tokenId: "", quantity: "1" },
-  ]);
-  const [selectedId, setSelectedId] = useState<string>("initial-holding");
-  const [threshold, setThreshold] = useState("1");
+  // Demo mode starts with a filled portfolio so the page can be proved against
+  // without inventing token ids first.
+  const [rows, setRows] = useState<HoldingRow[]>(() =>
+    demoMode
+      ? DEMO_HOLDINGS.map((holding, index) => ({
+          id: `demo-holding-${index}`,
+          tokenId: holding.tokenId,
+          quantity: holding.quantity,
+        }))
+      : [{ id: "initial-holding", tokenId: "", quantity: "1" }],
+  );
+  const [selectedId, setSelectedId] = useState<string>(
+    demoMode ? "demo-holding-0" : "initial-holding",
+  );
+  const [threshold, setThreshold] = useState(demoMode ? DEMO_THRESHOLD : "1");
   const [inputError, setInputError] = useState<string | undefined>();
 
   const selected = rows.find((row) => row.id === selectedId);

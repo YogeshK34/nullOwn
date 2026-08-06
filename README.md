@@ -48,6 +48,37 @@ nullOwn/
 
 ---
 
+## Run the demo
+
+To see the whole system working without deploying anything or installing
+`circom`:
+
+```bash
+npm install
+npm run demo          # writes frontend/.env.local, then starts the dev server
+```
+
+Open <http://localhost:3000>. A mock wallet connects on load and all three
+layers are usable end to end: register a meta-address, scan for incoming
+payments and reveal the key controlling one, derive a one-time address for
+someone else, generate an ownership proof, and open or answer an audit request.
+
+Demo mode fabricates everything that would otherwise need a chain — contract
+addresses, block numbers, transaction hashes, the audit log, role assignments,
+and the Groth16 proof bytes. Everything cryptographic is real: stealth keys,
+ECDH derivation, the Poseidon Merkle tree and the nullifier run the same code
+they would against Sepolia, so a revealed stealth key genuinely controls the
+address it is shown against. A banner says all of this on every page.
+
+The fixtures live in [`frontend/lib/demo.ts`](./frontend/lib/demo.ts) and the
+mutable demo state in [`frontend/lib/demo-store.ts`](./frontend/lib/demo-store.ts).
+Any `NEXT_PUBLIC_*` value you set explicitly overrides its demo fallback, so a
+partial real deployment can be mixed in. To leave demo mode, set
+`NEXT_PUBLIC_DEMO_MODE=false` in `frontend/.env.local` and follow the steps
+below.
+
+---
+
 ## Getting started
 
 ### 1. Install
@@ -127,8 +158,10 @@ npm test             # 63 unit tests over lib/
 
 ## Current status
 
-Implemented, tested and building. Two things gate a full end-to-end run: the
-circuit artifacts (step 3, needs `circom`) and a deployment (step 4).
+Implemented, tested and building. Two things gate a full end-to-end run
+*against a real chain*: the circuit artifacts (step 3, needs `circom`) and a
+deployment (step 4). Neither is needed to exercise the interface — see
+[Run the demo](#run-the-demo).
 
 See [IMPLEMENTATION_REPORT.md](./IMPLEMENTATION_REPORT.md) for what is complete,
 what is partial, what is not implemented and why, and the ordered list of

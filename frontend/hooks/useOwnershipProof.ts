@@ -6,6 +6,13 @@ import { useReadContract, useWaitForTransactionReceipt, useWriteContract } from 
 import { abis } from "@/lib/contracts";
 import { chainId, contractAddresses } from "@/lib/env";
 import {
+  DEMO_PROOF_POINTS,
+  DEMO_PROVING_TIME_MS,
+  demoDelay,
+  demoMode,
+} from "@/lib/demo";
+import { fieldToHex32 } from "@/lib/poseidon";
+import {
   buildMerkleTree,
   findLeafIndex,
   getMerkleProof,
@@ -14,12 +21,14 @@ import {
 } from "@/lib/merkle";
 import {
   areCircuitArtifactsAvailable,
+  computeNullifier,
   deriveSpendKeyHash,
   generateOwnershipProof,
   ProverError,
   type OwnershipProofResult,
 } from "@/lib/zkProver";
 import type { StealthKeys } from "@/lib/stealth";
+import { useDemoTx } from "./useDemoTx";
 
 /**
  * Client-side ZK ownership proving, end to end.
@@ -91,8 +100,14 @@ export function useOwnershipProof(): UseOwnershipProofResult {
   const isConfigured = verifierAddress !== undefined;
 
   // Probe once on mount so the UI can explain the situation before the user
-  // fills in a form they cannot submit.
+  // fills in a form they cannot submit. Demo mode skips the probe: it does not
+  // use the artifacts, so their absence is not a reason to disable the form.
   useEffect(() => {
+    if (demoMode) {
+      setArtifactsAvailable(true);
+      return;
+    }
+
     let cancelled = false;
     void areCircuitArtifactsAvailable().then((available) => {
       if (!cancelled) setArtifactsAvailable(available);
@@ -109,7 +124,7 @@ export function useOwnershipProof(): UseOwnershipProofResult {
     functionName: "isNullifierUsed",
     args: result ? [result.nullifier] : undefined,
     chainId,
-    query: { enabled: isConfigured && result !== undefined },
+    query: { enabled: !demoMode && isConfigured && result !== undefined },
   });
 
   const {
@@ -125,9 +140,12 @@ export function useOwnershipProof(): UseOwnershipProofResult {
     chainId,
   });
 
+  const demoTx = useDemoTx();
+  const effectiveConfirmed = demoMode ? demoTx.isConfirmed : isConfirmed;
+
   useEffect(() => {
-    if (isConfirmed) setStage("submitted");
-  }, [isConfirmed]);
+    if (effectiveConfirmed) setStage("submitted");
+  }, [effectiveConfirmed]);
 
   const prove = useCallback(async (request: ProveRequest): Promise<void> => {
     const { keys, holdings, tokenId, quantity, threshold } = request;
@@ -165,13 +183,20 @@ export function useOwnershipProof(): UseOwnershipProofResult {
       const spendKeyHash = await deriveSpendKeyHash(keys.spend.privateKey);
 
       setStage("proving");
-      const proof = await generateOwnershipProof({
-        tokenId,
-        quantity,
-        spendKeyHash,
-        merkleProof,
-        threshold,
-      });
+
+      // Demo mode runs everything above for real — the tree, the inclusion
+      // proof, the spend key hash — and fabricates only the Groth16 points,
+      // which is the one part that needs artifacts circom has to build. The
+      // three public signals below are genuine.
+      const proof = demoMode
+        ? await fabricateProof(tree.root, threshold, spendKeyHash, tokenId)
+        : await generateOwnershipProof({
+            tokenId,
+            quantity,
+            spendKeyHash,
+            merkleProof,
+            threshold,
+          });
 
       setResult(proof);
       setStage("ready");
@@ -188,6 +213,12 @@ export function useOwnershipProof(): UseOwnershipProofResult {
     if (!result || !verifierAddress) return;
 
     setStage("submitting");
+
+    if (demoMode) {
+      demoTx.run(`verify-ownership/${result.nullifier}`);
+      return;
+    }
+
     writeContract({
       address: verifierAddress,
       abi: abis.ownershipVerifier,
@@ -200,7 +231,7 @@ export function useOwnershipProof(): UseOwnershipProofResult {
       ],
       chainId,
     });
-  }, [result, verifierAddress, writeContract]);
+  }, [demoTx, result, verifierAddress, writeContract]);
 
   const reset = useCallback((): void => {
     setStage("idle");
@@ -208,8 +239,9 @@ export function useOwnershipProof(): UseOwnershipProofResult {
     setMerkleRoot(undefined);
     setError(undefined);
     setArtifactsMissing(false);
-    resetWrite();
-  }, [resetWrite]);
+    if (demoMode) demoTx.reset();
+    else resetWrite();
+  }, [demoTx, resetWrite]);
 
   return {
     stage,
@@ -221,12 +253,64 @@ export function useOwnershipProof(): UseOwnershipProofResult {
     prove,
     submit,
     reset,
-    isSubmitting,
-    isConfirming,
-    isConfirmed,
-    txHash,
-    submitError,
-    nullifierUsed,
+    isSubmitting: demoMode ? demoTx.isWriting : isSubmitting,
+    isConfirming: demoMode ? demoTx.isConfirming : isConfirming,
+    isConfirmed: effectiveConfirmed,
+    txHash: demoMode ? demoTx.txHash : txHash,
+    submitError: demoMode ? demoTx.error : submitError,
+    // No chain to ask, and a demo that refused its own second proof would be
+    // more confusing than instructive.
+    nullifierUsed: demoMode ? false : nullifierUsed,
     isConfigured,
+  };
+}
+
+/**
+ * A proof-shaped object with fabricated Groth16 points.
+ *
+ * The public signals are the real ones — the Merkle root computed from the
+ * user's holdings, the threshold they entered, and the Poseidon nullifier
+ * derived from their actual spend key. Only `proof` is invented, and a real
+ * verifier would reject it, which is why demo mode never sends it anywhere.
+ */
+async function fabricateProof(
+  merkleRoot: bigint,
+  threshold: bigint,
+  spendKeyHash: bigint,
+  tokenId: bigint,
+): Promise<OwnershipProofResult> {
+  const nullifier = await computeNullifier(spendKeyHash, tokenId);
+
+  // Proving is the slow step in the real flow; the demo keeps it visible.
+  await demoDelay(1_400);
+
+  const points = DEMO_PROOF_POINTS.map((point) => point.toString());
+
+  return {
+    proof: {
+      pi_a: [points[0]!, points[1]!, "1"],
+      pi_b: [
+        [points[2]!, points[3]!],
+        [points[4]!, points[5]!],
+        ["1", "0"],
+      ],
+      pi_c: [points[6]!, points[7]!, "1"],
+      protocol: "groth16",
+      curve: "bn128",
+    },
+    publicSignals: [merkleRoot.toString(), threshold.toString(), nullifier.toString()],
+    solidityProof: [
+      DEMO_PROOF_POINTS[0]!,
+      DEMO_PROOF_POINTS[1]!,
+      DEMO_PROOF_POINTS[2]!,
+      DEMO_PROOF_POINTS[3]!,
+      DEMO_PROOF_POINTS[4]!,
+      DEMO_PROOF_POINTS[5]!,
+      DEMO_PROOF_POINTS[6]!,
+      DEMO_PROOF_POINTS[7]!,
+    ],
+    solidityPublicSignals: [merkleRoot, threshold, nullifier],
+    nullifier: fieldToHex32(nullifier),
+    provingTimeMs: DEMO_PROVING_TIME_MS,
   };
 }

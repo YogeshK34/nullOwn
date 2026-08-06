@@ -18,7 +18,8 @@
     "seed:registry:sepolia": "hardhat run scripts/seed-registry.ts --network sepolia",
     "circuits:setup": "ts-node --project tsconfig.json scripts/setup-zkeys.ts",
     "frontend:dev": "npm run dev --workspace frontend",
-    "frontend:build": "npm run build --workspace frontend"
+    "frontend:build": "npm run build --workspace frontend",
+    "demo": "node scripts/use-demo-env.js && npm run dev --workspace frontend"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.8",

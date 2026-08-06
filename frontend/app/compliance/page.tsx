@@ -301,11 +301,7 @@ function AuditCard({ audit }: { audit: AuditRecord }) {
 
       <div className="flex flex-col">
         <DataRow label="Requested by" value={audit.regulator} />
-        <DataRow
-          label="Requested at"
-          value={new Date(audit.timestamp * 1000).toLocaleString()}
-          mono={false}
-        />
+        <DataRow label="Requested at" value={formatAuditTime(audit.timestamp)} mono={false} />
         <DataRow label="Scope (bytes32)" value={audit.scope} />
       </div>
 
@@ -325,6 +321,19 @@ function AuditCard({ audit }: { audit: AuditRecord }) {
       )}
     </div>
   );
+}
+
+/**
+ * Audit timestamps in UTC.
+ *
+ * `toLocaleString` would be friendlier, but it resolves against the runtime's
+ * locale and timezone — which differ between the server render and the browser,
+ * producing a hydration mismatch on every record. A fixed UTC rendering agrees
+ * on both sides, and an append-only regulatory log is better read in one
+ * timezone than in whichever one the reader happens to sit in.
+ */
+function formatAuditTime(timestamp: number): string {
+  return `${new Date(timestamp * 1000).toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
 
 function TxLink({ hash }: { hash: string }) {

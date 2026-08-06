@@ -1,5 +1,12 @@
 import type { Address } from "viem";
 
+import {
+  DEMO_CHAIN_ID,
+  DEMO_CONTRACT_ADDRESSES,
+  DEMO_START_BLOCK,
+  demoMode,
+} from "./demo";
+
 /**
  * Typed access to the `NEXT_PUBLIC_*` configuration.
  *
@@ -11,6 +18,11 @@ import type { Address } from "viem";
  * Nothing here is required for the app to boot. Contracts are optional so the
  * UI can render an explicit "not deployed" state instead of crashing, which is
  * the situation on a fresh clone before `npm run deploy:sepolia`.
+ *
+ * When `NEXT_PUBLIC_DEMO_MODE=true`, unset values fall back to the fabricated
+ * configuration in `lib/demo.ts` so every panel reports itself configured. A
+ * real address always wins over the demo one, so pointing demo mode at an
+ * actual deployment is a matter of setting the variable.
  */
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -37,15 +49,39 @@ export type ContractName =
   | "ownershipVerifier"
   | "complianceModule";
 
+/** In demo mode an unset address falls back to the fabricated one. */
+function withDemoFallback(
+  configured: Address | undefined,
+  name: ContractName,
+): Address | undefined {
+  if (configured) return configured;
+  return demoMode ? (DEMO_CONTRACT_ADDRESSES[name] as Address) : undefined;
+}
+
 export const contractAddresses: Record<ContractName, Address | undefined> = {
-  stealthRegistry: readAddress(process.env.NEXT_PUBLIC_ERC6538_ADDRESS),
-  stealthAnnouncer: readAddress(process.env.NEXT_PUBLIC_ERC5564_ADDRESS),
-  ownershipVerifier: readAddress(process.env.NEXT_PUBLIC_VERIFIER_ADDRESS),
-  complianceModule: readAddress(process.env.NEXT_PUBLIC_COMPLIANCE_ADDRESS),
+  stealthRegistry: withDemoFallback(
+    readAddress(process.env.NEXT_PUBLIC_ERC6538_ADDRESS),
+    "stealthRegistry",
+  ),
+  stealthAnnouncer: withDemoFallback(
+    readAddress(process.env.NEXT_PUBLIC_ERC5564_ADDRESS),
+    "stealthAnnouncer",
+  ),
+  ownershipVerifier: withDemoFallback(
+    readAddress(process.env.NEXT_PUBLIC_VERIFIER_ADDRESS),
+    "ownershipVerifier",
+  ),
+  complianceModule: withDemoFallback(
+    readAddress(process.env.NEXT_PUBLIC_COMPLIANCE_ADDRESS),
+    "complianceModule",
+  ),
 };
 
 /** Sepolia unless told otherwise; Mumbai is 80001. */
-export const chainId = readInt(process.env.NEXT_PUBLIC_CHAIN_ID, 11155111);
+export const chainId = readInt(
+  process.env.NEXT_PUBLIC_CHAIN_ID,
+  demoMode ? DEMO_CHAIN_ID : 11155111,
+);
 
 /**
  * Block to begin announcement scanning from. Public RPC providers reject
@@ -53,7 +89,7 @@ export const chainId = readInt(process.env.NEXT_PUBLIC_CHAIN_ID, 11155111);
  * block — `scripts/deploy.ts` prints the correct value.
  */
 export const announcementStartBlock = BigInt(
-  readInt(process.env.NEXT_PUBLIC_ANNOUNCEMENT_START_BLOCK, 0),
+  readInt(process.env.NEXT_PUBLIC_ANNOUNCEMENT_START_BLOCK, demoMode ? DEMO_START_BLOCK : 0),
 );
 
 /** Optional RPC override for read paths; falls back to the chain's public RPC. */

@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import type { Address } from "viem";
 
 import { abis } from "@/lib/contracts";
 import { contractAddresses, chainId } from "@/lib/env";
+import { demoMode } from "@/lib/demo";
+import {
+  demoRegistrationFor,
+  setDemoRegistration,
+  subscribeDemoStore,
+  getDemoRegistrations,
+} from "@/lib/demo-store";
 import { decodeMetaAddress, type StealthMetaAddress } from "@/lib/stealth";
+import { useDemoTx } from "./useDemoTx";
 
 /**
  * Reads and writes the ERC-6538 stealth meta-address registry.
@@ -44,7 +52,7 @@ export function useStealthRegistry(account?: Address): UseStealthRegistryResult 
   const isConfigured = registryAddress !== undefined;
 
   const {
-    data: encoded,
+    data: onChainEncoded,
     isLoading,
     error: readError,
     refetch,
@@ -55,10 +63,23 @@ export function useStealthRegistry(account?: Address): UseStealthRegistryResult 
     args: target ? [target] : undefined,
     chainId,
     query: {
-      // Nothing to read until both the contract and a target account exist.
-      enabled: isConfigured && target !== undefined,
+      // Nothing to read until both the contract and a target account exist,
+      // and nothing to read at all in demo mode — the entry comes from the
+      // demo store instead of the chain.
+      enabled: !demoMode && isConfigured && target !== undefined,
     },
   });
+
+  const demoRegistrations = useSyncExternalStore(
+    subscribeDemoStore,
+    getDemoRegistrations,
+    getDemoRegistrations,
+  );
+
+  const encoded =
+    demoMode && target
+      ? demoRegistrationFor(demoRegistrations, target, connectedAddress)
+      : onChainEncoded;
 
   // A registered entry can still be junk — anyone can write 66 arbitrary bytes.
   // Decoding failure is surfaced rather than thrown so the page can offer
@@ -90,9 +111,21 @@ export function useStealthRegistry(account?: Address): UseStealthRegistryResult 
     chainId,
   });
 
+  const demoTx = useDemoTx();
+
   const register = useCallback(
     (encodedMetaAddress: string): void => {
       if (!registryAddress) return;
+
+      if (demoMode) {
+        const account = connectedAddress;
+        demoTx.run("register-keys", () => {
+          if (!account) throw new Error("No account connected.");
+          setDemoRegistration(account, encodedMetaAddress);
+        });
+        return;
+      }
+
       writeContract({
         address: registryAddress,
         abi: abis.stealthRegistry,
@@ -101,23 +134,23 @@ export function useStealthRegistry(account?: Address): UseStealthRegistryResult 
         chainId,
       });
     },
-    [registryAddress, writeContract],
+    [connectedAddress, demoTx, registryAddress, writeContract],
   );
 
   return {
     registered,
     decodeError,
-    isLoading,
+    isLoading: demoMode ? false : isLoading,
     isRegistered: registered !== undefined,
-    readError,
+    readError: demoMode ? null : readError,
     refetch: useCallback(() => void refetch(), [refetch]),
     register,
-    isRegistering,
-    isConfirming,
-    isConfirmed,
-    txHash,
-    writeError,
-    reset,
+    isRegistering: demoMode ? demoTx.isWriting : isRegistering,
+    isConfirming: demoMode ? demoTx.isConfirming : isConfirming,
+    isConfirmed: demoMode ? demoTx.isConfirmed : isConfirmed,
+    txHash: demoMode ? demoTx.txHash : txHash,
+    writeError: demoMode ? demoTx.error : writeError,
+    reset: demoMode ? demoTx.reset : reset,
     isConfigured,
   };
 }

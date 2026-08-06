@@ -18,6 +18,7 @@ import {
   storedKeysCreatedAt,
   KeystoreError,
 } from "@/lib/keystore";
+import { DEMO_ACCOUNT, demoKeysFor, demoMode } from "@/lib/demo";
 
 /**
  * Session-scoped stealth key management.
@@ -59,7 +60,23 @@ function describeError(error: unknown): string {
 }
 
 export function useStealthKeys(): UseStealthKeysResult {
-  const [keys, setKeys] = useState<StealthKeys | undefined>();
+  /**
+   * Demo mode starts unlocked, with a fixed key set.
+   *
+   * Keys live in this hook's state, so they do not survive a route change
+   * unless they were saved to the keystore and unlocked again. That is correct
+   * for the real app and unworkable for a demo — /prove would refuse to prove
+   * for anyone who had not first saved a passphrase on /stealth. Seeding from a
+   * deterministic address gives every page the same keys without changing how
+   * any of it works: these are real secp256k1 keys, and "Generate New Keys"
+   * still replaces them.
+   *
+   * The seed is deterministic, so the server and the client compute the same
+   * value and hydration stays clean.
+   */
+  const [keys, setKeys] = useState<StealthKeys | undefined>(() =>
+    demoMode ? demoKeysFor(DEMO_ACCOUNT) : undefined,
+  );
   const [hasStored, setHasStored] = useState(false);
   const [storedAt, setStoredAt] = useState<string | undefined>();
   const [isHydrating, setIsHydrating] = useState(true);

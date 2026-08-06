@@ -10,6 +10,8 @@ import {
 } from "@rainbow-me/rainbowkit/wallets";
 
 import { supportedChains } from "./chains";
+import { demoMode } from "./demo";
+import { demoWallet } from "./demo-wallet";
 import { walletConnectProjectId } from "./env";
 import { createCookieStorage, transports } from "./wagmi-config";
 
@@ -46,18 +48,29 @@ export function getConfig() {
     // @base-org/account -> @coinbase/cdp-sdk -> optional @x402/* Solana
     // packages that are not installed and break the client bundle. None of
     // that is relevant to an EVM testnet privacy layer.
-    wallets: [
-      {
-        groupName: "Popular",
-        wallets: [
-          injectedWallet,
-          metaMaskWallet,
-          rainbowWallet,
-          walletConnectWallet,
-          safeWallet,
+    // In demo mode the mock wallet leads the list and auto-connects, so the
+    // app opens in a connected state. The WalletConnect-backed wallets are
+    // dropped there: without a real project id they fire a doomed request to
+    // WalletConnect's API on every load, and a demo that needs no signature has
+    // nothing to gain from them. A browser-extension wallet is still offered,
+    // so connecting a real one remains possible.
+    wallets: demoMode
+      ? [
+          { groupName: "Demo", wallets: [demoWallet] },
+          { groupName: "Popular", wallets: [injectedWallet] },
+        ]
+      : [
+          {
+            groupName: "Popular",
+            wallets: [
+              injectedWallet,
+              metaMaskWallet,
+              rainbowWallet,
+              walletConnectWallet,
+              safeWallet,
+            ],
+          },
         ],
-      },
-    ],
 
     ssr: true,
     storage: createCookieStorage(),
